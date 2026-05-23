@@ -1,6 +1,6 @@
 /**
- * Centralized regex patterns for Angular code analysis
- * Used to parse decorators, imports, injections, and routes
+ * Regular Expression Patterns
+ * Centralized regex patterns for Angular file parsing
  */
 
 // ============================================================================
@@ -8,337 +8,255 @@
 // ============================================================================
 
 /**
- * Matches @Component decorator and extracts its configuration
- * Handles both single-line and multi-line formats
- * Captures: selector, templateUrl, styleUrls, standalone
+ * Pattern to match @Component decorator content
  */
-export const COMPONENT_DECORATOR_PATTERN =
-	/@Component\s*\(\s*{([\s\S]*?)}\s*\)/;
+export const COMPONENT_DECORATOR_PATTERN = /@Component\(\{([\s\S]*?)\}\)/m;
 
 /**
- * Extract specific properties from decorator config
- * Examples: selector: 'app-dashboard', templateUrl: './dashboard.html'
+ * Pattern to match @Injectable decorator content
  */
-export const DECORATOR_PROPERTY_PATTERN =
-	/(\w+)\s*:\s*([^,\n}]+)/g;
+export const INJECTABLE_DECORATOR_PATTERN = /@Injectable\(\{([\s\S]*?)\}\)/m;
 
 /**
- * Matches @Injectable decorator
- * Captures: providedIn scope
+ * Pattern to match @NgModule decorator content
  */
-export const SERVICE_DECORATOR_PATTERN =
-	/@Injectable\s*\(\s*{([\s\S]*?)}\s*\)/;
+export const NG_MODULE_DECORATOR_PATTERN = /@NgModule\(\{([\s\S]*?)\}\)/m;
 
 /**
- * Matches @NgModule decorator for module analysis
- * Captures: declarations, imports, providers, exports
+ * Pattern to match @Input decorator
  */
-export const NGMODULE_DECORATOR_PATTERN =
-	/@NgModule\s*\(\s*{([\s\S]*?)}\s*\)/;
+export const INPUT_DECORATOR_PATTERN = /@Input\(\)\s+(\w+)/g;
 
 /**
- * Matches CanActivate, CanDeactivate, CanLoad, CanActivateChild guards
+ * Pattern to match @Output decorator
  */
-export const GUARD_INTERFACE_PATTERN =
-	/implements\s+(CanActivate|CanActivateChild|CanDeactivate|CanLoad)/;
-
-/**
- * Matches HttpInterceptor implementation
- */
-export const INTERCEPTOR_INTERFACE_PATTERN = /implements\s+HttpInterceptor/;
+export const OUTPUT_DECORATOR_PATTERN = /@Output\(\)\s+(\w+)/g;
 
 // ============================================================================
-// IMPORT PATTERNS
+// SELECTOR AND TEMPLATE PATTERNS
 // ============================================================================
 
 /**
- * Matches ES6 import statements
- * Captures: imported items, source module
- * Example: import { Component, OnInit } from '@angular/core'
+ * Pattern to match selector in @Component
  */
-export const IMPORT_STATEMENT_PATTERN =
-	/import\s+(?:{([^}]+)}|(\w+))\s+from\s+['"]([^'"]+)['"]/g;
+export const SELECTOR_PATTERN = /selector:\s*['"`]([^'"`]*)['"`]/;
 
 /**
- * Match specific named import from a module
- * Example: import { Component } from '@angular/core'
+ * Pattern to match templateUrl in @Component
  */
-export const NAMED_IMPORT_PATTERN =
-	/import\s+{([^}]+)}\s+from\s+['"]([^'"]+)['"]/g;
+export const TEMPLATE_URL_PATTERN = /templateUrl:\s*['"`]([^'"`]*)['"`]/;
 
 /**
- * Extract single import item (for splitting comma-separated imports)
+ * Pattern to match styleUrl or styleUrls in @Component
  */
-export const IMPORT_ITEM_PATTERN = /\w+/g;
+export const STYLE_URLS_PATTERN = /styleUrls:\s*\[\s*([^\]]*?)\s*\]/s;
+
+/**
+ * Pattern to match individual style URLs
+ */
+export const STYLE_URL_ITEM_PATTERN = /['"`]([^'"`]+)['"`]/g;
 
 // ============================================================================
-// DEPENDENCY INJECTION PATTERNS
-// ============================================================================
-
-/**
- * Matches constructor with dependency injections
- * Captures the entire constructor parameter list
- * Example: constructor(private service: MyService, private http: HttpClient)
- */
-export const CONSTRUCTOR_PATTERN =
-	/constructor\s*\(\s*([^)]*)\s*\)/;
-
-/**
- * Extract individual constructor parameters
- * Captures: access modifier, parameter name, type
- * Example: private service: MyService
- */
-export const CONSTRUCTOR_PARAMETER_PATTERN =
-	/(private|public|protected)?\s*(\w+)\s*:\s*(\w+)/g;
-
-/**
- * Match inline property injection
- * Example: @Input() title: string = '';
- */
-export const INPUT_PROPERTY_PATTERN = /@Input\s*\(\s*\)\s*(\w+)/g;
-
-/**
- * Match Output property
- * Example: @Output() onClose = new EventEmitter();
- */
-export const OUTPUT_PROPERTY_PATTERN = /@Output\s*\(\s*\)\s*(\w+)/g;
-
-// ============================================================================
-// ROUTE DEFINITION PATTERNS
+// SERVICE PATTERNS
 // ============================================================================
 
 /**
- * Matches const routes or export const routes declaration
- * Captures entire routes array
+ * Pattern to extract providedIn from @Injectable decorator
  */
-export const ROUTES_DECLARATION_PATTERN =
-	/(?:const|export\s+const)\s+\w*[Rr]outes\s*[:\w<>]*=\s*\[([\s\S]*?)\]\s*;/;
-
-/**
- * Matches individual route object in routes array
- * Captures route properties
- */
-export const ROUTE_OBJECT_PATTERN = /{([\s\S]*?)}/;
-
-/**
- * Extract route path
- * Example: path: 'dashboard'
- */
-export const ROUTE_PATH_PATTERN = /path\s*:\s*['"]([^'"]*)['"]/;
-
-/**
- * Extract component from route
- * Example: component: DashboardComponent
- */
-export const ROUTE_COMPONENT_PATTERN = /component\s*:\s*(\w+)/;
-
-/**
- * Extract lazy-loaded module path
- * Example: loadChildren: () => import('./admin/admin.module').then(m => m.AdminModule)
- */
-export const LAZY_LOAD_PATTERN =
-	/loadChildren\s*:\s*\(\s*\)\s*=>\s*import\s*\(\s*['"]([^'"]+)['"]\s*\)/;
-
-/**
- * Extract route guards
- * Example: canActivate: [AuthGuard]
- */
-export const GUARD_PATTERN = /canActivate\s*:\s*\[([\w,\s]+)\]/;
-
-/**
- * Extract child routes
- * Captures children array
- */
-export const CHILDREN_ROUTES_PATTERN = /children\s*:\s*\[([\s\S]*?)\]/;
-
-/**
- * Redirect route pattern
- * Example: redirectTo: 'dashboard'
- */
-export const REDIRECT_PATTERN = /redirectTo\s*:\s*['"]([^'"]*)['"]/;
-
-/**
- * Wildcard route pattern
- */
-export const WILDCARD_ROUTE_PATTERN = /path\s*:\s*['"]\*\*['"]/;
+export const SERVICE_DECORATOR_PATTERN = /providedIn\s*:\s*['"`](\w+)['"`]/;
 
 // ============================================================================
-// SELECTOR & CLASS NAME PATTERNS
+// DEPENDENCY PATTERNS (UPDATED - More comprehensive)
 // ============================================================================
 
 /**
- * Extract selector from @Component decorator
- * Example: selector: 'app-dashboard'
+ * Pattern to extract constructor parameters
  */
-export const SELECTOR_PATTERN = /selector\s*:\s*['"]([^'"]+)['"]/;
+export const CONSTRUCTOR_PATTERN = /constructor\(([^)]*)\)/;
 
 /**
- * Extract class name
- * Example: export class DashboardComponent
+ * Extract dependencies from constructor injection
+ * Matches: private serviceName: ServiceType, public http: HttpClient
  */
-export const CLASS_DEFINITION_PATTERN =
-	/export\s+class\s+(\w+)(\s+(?:implements|extends)\s+[\w\s,<>.]+)?/;
-
-/**
- * Match standalone: true in @Component
- */
-export const STANDALONE_PATTERN = /standalone\s*:\s*true/;
+export function extractConstructorDependencies(content: string): string[] {
+    const dependencies: string[] = [];
+    
+    const constructorMatch = content.match(CONSTRUCTOR_PATTERN);
+    if (!constructorMatch) return dependencies;
+    
+    const params = constructorMatch[1].split(',');
+    
+    for (const param of params) {
+        // Match: private name: Type, public name: Type, protected name: Type
+        const injectMatch = param.match(/(?:private|public|protected)\s+\w+\s*:\s*(\w+)/);
+        if (injectMatch && injectMatch[1]) {
+            dependencies.push(injectMatch[1]);
+        }
+        
+        // Match: @Inject(Token) name
+        const injectDecoratorMatch = param.match(/@Inject\((\w+)\)/);
+        if (injectDecoratorMatch && injectDecoratorMatch[1]) {
+            dependencies.push(injectDecoratorMatch[1]);
+        }
+        
+        // Match: name: Type (no access modifier)
+        const simpleMatch = param.match(/^\s*(\w+)\s*:\s*(\w+)/);
+        if (simpleMatch && simpleMatch[2] && !simpleMatch[1].match(/private|public|protected/)) {
+            dependencies.push(simpleMatch[2]);
+        }
+    }
+    
+    return [...new Set(dependencies)]; // Remove duplicates
+}
 
 // ============================================================================
-// TEMPLATEURL & STYLEURLS PATTERNS
-// ============================================================================
-
-/**
- * Extract templateUrl value
- */
-export const TEMPLATE_URL_PATTERN = /templateUrl\s*:\s*['"]([^'"]+)['"]/;
-
-/**
- * Extract styleUrls array
- */
-export const STYLE_URLS_PATTERN = /styleUrls\s*:\s*\[([^\]]+)\]/;
-
-/**
- * Extract individual style URL from styleUrls array
- */
-export const STYLE_URL_ITEM_PATTERN = /['"]([^'"]+)['"]/g;
-
-// ============================================================================
-// API & HTTP PATTERNS
-// ============================================================================
-
-/**
- * Detect HTTP method calls
- * Examples: this.http.get(...), this.http.post(...), etc.
- */
-export const HTTP_METHOD_PATTERN = /this\.http\.(get|post|put|patch|delete|request|head)\s*<([^>]+)>/g;
-
-/**
- * Extract API endpoint URL from HTTP call
- * Example: this.http.get('/api/users')
- */
-export const API_ENDPOINT_PATTERN =
-	/(?:get|post|put|patch|delete|request|head)\s*\(\s*['"]([^'"]+)['"]/g;
-
-// ============================================================================
-// UTILITY FUNCTIONS FOR PATTERN MATCHING
+// HTTP AND API PATTERNS
 // ============================================================================
 
 /**
- * Safely extract string value between quotes
- * Handles both single and double quotes
+ * Pattern to match HTTP method calls
+ * Matches: http.get(), http.post(), etc.
  */
-export function extractQuotedValue(text: string): string {
-	const match = text.match(/['"]([^'"]+)['"]/);
-	return match ? match[1] : '';
+export const HTTP_METHOD_PATTERN = /http\.(get|post|put|patch|delete|request)\s*\(/g;
+
+/**
+ * Pattern to match API endpoint URLs
+ * Matches: 'https://api.example.com/users', "/api/data"
+ */
+export const API_ENDPOINT_PATTERN = /['"`](https?:\/\/[^'"`]+|\.?\/api\/[^'"`]+)['"`]/g;
+
+// ============================================================================
+// CLASS AND FILE PATTERNS
+// ============================================================================
+
+/**
+ * Extract class name from TypeScript file
+ */
+export function extractClassName(content: string): string | null {
+    const match = content.match(/export\s+class\s+(\w+)/);
+    return match ? match[1] : null;
 }
 
 /**
- * Extract array values from bracket-enclosed list
+ * Check if a decorator exists in the file content
+ * @param content File content
+ * @param decoratorName Decorator name (e.g., 'Component', 'Injectable')
+ * @returns True if decorator exists
  */
-export function extractArrayItems(text: string): string[] {
-	const match = text.match(/\[([^\]]*)\]/);
-	if (!match) return [];
-
-	return match[1]
-		.split(',')
-		.map((item) => item.trim())
-		.filter((item) => item.length > 0);
-}
-
-/**
- * Extract properties from decorator config object
- * Returns key-value pairs found in decorator
- */
-export function extractDecoratorProperties(
-	decoratorContent: string
-): Record<string, string> {
-	const properties: Record<string, string> = {};
-
-	const propertyMatches = decoratorContent.matchAll(DECORATOR_PROPERTY_PATTERN);
-	for (const match of propertyMatches) {
-		const key = match[1].trim();
-		let value = match[2].trim();
-
-		// Remove trailing comma if present
-		if (value.endsWith(',')) {
-			value = value.slice(0, -1).trim();
-		}
-
-		properties[key] = value;
-	}
-
-	return properties;
-}
-
-/**
- * Extract class name from TypeScript class definition
- */
-export function extractClassName(fileContent: string): string | null {
-	const match = fileContent.match(CLASS_DEFINITION_PATTERN);
-	return match ? match[1] : null;
-}
-
-/**
- * Check if file contains a specific decorator
- */
-export function hasDecorator(
-	fileContent: string,
-	decoratorName: string
-): boolean {
-	const pattern = new RegExp(`@${decoratorName}\\s*\\(`);
-	return pattern.test(fileContent);
+export function hasDecorator(content: string, decoratorName: string): boolean {
+    const pattern = new RegExp(`@${decoratorName}\\s*\\(`, 'i');
+    return pattern.test(content);
 }
 
 /**
  * Check if component is standalone
  */
-export function isStandaloneComponent(fileContent: string): boolean {
-	return STANDALONE_PATTERN.test(fileContent);
+export function isStandaloneComponent(content: string): boolean {
+    return /standalone:\s*true/.test(content);
+}
+
+// ============================================================================
+// ROUTE PATTERNS (UPDATED - More comprehensive)
+// ============================================================================
+
+/**
+ * Pattern to find routes array in various formats
+ */
+export const ROUTES_ARRAY_PATTERNS = [
+    /export\s+const\s+\w+\s*:\s*Routes\s*=\s*\[([\s\S]*?)\];/m,
+    /const\s+routes\s*:\s*Routes\s*=\s*\[([\s\S]*?)\];/m,
+    /Routes\s*=\s*\[([\s\S]*?)\];/m,
+    /RouterModule\.forRoot\(\s*\[([\s\S]*?)\]\)/m,
+    /RouterModule\.forChild\(\s*\[([\s\S]*?)\]\)/m,
+    /provideRouter\(\s*\[([\s\S]*?)\]\)/m
+];
+
+/**
+ * Pattern to extract route path
+ */
+export const ROUTE_PATH_PATTERN = /path\s*:\s*['"`]([^'"`]*)['"`]/;
+
+/**
+ * Pattern to extract route component
+ */
+export const ROUTE_COMPONENT_PATTERN = /component\s*:\s*(\w+)/;
+
+/**
+ * Pattern to extract loadComponent (lazy loading)
+ */
+export const ROUTE_LOAD_COMPONENT_PATTERN = /loadComponent\s*:\s*\(\)\s*=>\s*import\([^)]+\)\.then\(m\s*=>\s*m\.(\w+)\)/;
+
+/**
+ * Pattern to extract loadChildren (lazy loading modules)
+ */
+export const ROUTE_LOAD_CHILDREN_PATTERN = /loadChildren\s*:\s*\(\)\s*=>\s*import\([^)]+\)\.then\(m\s*=>\s*m\.(\w+)\)/;
+
+/**
+ * Pattern to extract redirectTo
+ */
+export const ROUTE_REDIRECT_PATTERN = /redirectTo\s*:\s*['"`]([^'"`]*)['"`]/;
+
+/**
+ * Pattern to extract canActivate guards
+ */
+export const ROUTE_CAN_ACTIVATE_PATTERN = /canActivate\s*:\s*\[(.*?)\]/;
+
+// ============================================================================
+// GUARD PATTERNS
+// ============================================================================
+
+/**
+ * Pattern to detect guard interface
+ */
+export const GUARD_INTERFACE_PATTERN = /implements\s+(\w+)/;
+
+/**
+ * Get all guard types
+ */
+export const GUARD_TYPES = ['CanActivate', 'CanActivateChild', 'CanDeactivate', 'CanLoad', 'CanMatch'];
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Extract decorator properties as key-value map
+ * @param decoratorContent Content inside @Component({ ... })
+ * @returns Map of property names to values
+ */
+export function extractDecoratorProperties(decoratorContent: string): Record<string, string> {
+    const properties: Record<string, string> = {};
+    
+    // Match property: value pairs (handling nested objects/arrays)
+    const propertyPattern = /(\w+):\s*([^,}\n]+)/g;
+    let match;
+    
+    while ((match = propertyPattern.exec(decoratorContent)) !== null) {
+        const key = match[1];
+        let value = match[2].trim();
+        
+        // Clean up value
+        if (value.startsWith('[') && value.endsWith(']')) {
+            // Keep array as is
+        } else if (value.startsWith('{') && value.endsWith('}')) {
+            // Keep object as is
+        } else if (value.match(/^['"`].*['"`]$/)) {
+            // Remove quotes from strings
+            value = value.slice(1, -1);
+        }
+        
+        properties[key] = value;
+    }
+    
+    return properties;
 }
 
 /**
- * Extract all imports from a file
+ * Parse URL from property value (removes ./ prefix)
  */
-export function extractImports(
-	fileContent: string
-): Array<{ items: string[]; from: string }> {
-	const imports: Array<{ items: string[]; from: string }> = [];
-
-	const importMatches = fileContent.matchAll(NAMED_IMPORT_PATTERN);
-	for (const match of importMatches) {
-		const items = match[1]
-			.split(',')
-			.map((item) => item.trim())
-			.filter((item) => item.length > 0);
-
-		imports.push({
-			items,
-			from: match[2],
-		});
-	}
-
-	return imports;
-}
-
-/**
- * Extract constructor parameters (dependencies)
- */
-export function extractConstructorDependencies(
-	fileContent: string
-): string[] {
-	const dependencies: string[] = [];
-
-	const constructorMatch = fileContent.match(CONSTRUCTOR_PATTERN);
-	if (!constructorMatch) return dependencies;
-
-	const parameterMatches = constructorMatch[1].matchAll(
-		CONSTRUCTOR_PARAMETER_PATTERN
-	);
-	for (const match of parameterMatches) {
-		const type = match[3];
-		dependencies.push(type);
-	}
-
-	return dependencies;
+export function parseUrl(url: string): string {
+    if (url.startsWith('./')) {
+        return url.substring(2);
+    }
+    return url;
 }

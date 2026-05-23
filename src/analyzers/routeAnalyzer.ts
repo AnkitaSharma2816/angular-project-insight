@@ -1,262 +1,382 @@
+/**
+ * Route File Analyzer
+ * Parses Angular route configurations
+ * Supports: app-routing.module.ts, standalone routes, feature modules, inline routes
+ */
+
 import * as vscode from 'vscode';
-import { AngularRoute } from '../models/types';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as fileUtils from '../utils/fileUtils';
 
-/**
- * Analyze a single route file
- */
-export async function analyzeRouteFile(
-	uri: vscode.Uri,
-	fileContent: string
-): Promise<AngularRoute[]> {
-
-	try {
-
-		console.log("📄 Route file:", uri.fsPath);
-
-		const routeBlocks =
-			extractRouteBlocks(fileContent);
-
-		if (routeBlocks.length === 0) {
-			console.warn("❌ No route block found");
-			return [];
-		}
-
-		const allRoutes: AngularRoute[] = [];
-
-		for (const block of routeBlocks) {
-			allRoutes.push(...parseRouteObjects(block));
-		}
-
-		console.log("✅ Parsed routes:", allRoutes);
-
-		return allRoutes;
-
-	} catch (error) {
-
-		console.error("Route parse error:", error);
-		return [];
-	}
+export interface AngularRoute {
+    path: string;
+    component: string | null;
+    children: AngularRoute[];
+    guards: string[];
+    lazyModule: string | null;
+    lazyRoutes: any[];
+    isWildcard: boolean;
+    redirectTo: string | null;
+    fullPath?: string;
 }
 
 /**
- * Extract routes array from Angular file
- * Supports: export const routes: Routes = [...]
+ * Analyze all routes in the workspace
  */
-function extractRouteBlocks(content: string): string[] {
-
-	const match =
-		content.match(
-			/export\s+const\s+\w+\s*:\s*Routes\s*=\s*\[([\s\S]*?)\]/m
-		);
-
-	if (!match) {
-		return [];
-	}
-
-	return [match[1]];
+export async function analyzeAllRoutes(): Promise<AngularRoute[]> {
+    const routeFiles = await findRouteFiles();
+    console.log(`📁 Route files found: ${routeFiles.length}`);
+    
+    if (routeFiles.length === 0) {
+        console.log('⚠️ No route files found. Check that your Angular project has routing configured.');
+        return [];
+    }
+    
+    const allRoutes: AngularRoute[] = [];
+    
+    for (const file of routeFiles) {
+        try {
+            console.log(`\n📄 Analyzing: ${path.basename(file.fsPath)}`);
+            const content = await fileUtils.readFileContent(file);
+            const routes = await analyzeRouteFileContent(content, file.fsPath);
+            
+            if (routes.length > 0) {
+                console.log(`   ✅ Found ${routes.length} route(s)`);
+                routes.forEach(r => {
+                    console.log(`      - ${r.path || '(root)'} → ${r.component || r.redirectTo || 'lazy'}`);
+                });
+                allRoutes.push(...routes);
+            } else {
+                console.log(`   ⚠️ No routes parsed from this file`);
+            }
+        } catch (error) {
+            console.error(`Error analyzing route file ${file.fsPath}:`, error);
+        }
+    }
+    
+    console.log(`\n✅ Total routes found: ${allRoutes.length}`);
+    return allRoutes;
 }
 
 /**
- * Parse all route objects inside array
+ * Find all route files in the workspace
  */
-function parseRouteObjects(content: string): AngularRoute[] {
-
-	const routes: AngularRoute[] = [];
-
-	const objects =
-		content.match(/\{[\s\S]*?\}/g);
-
-	if (!objects) return [];
-
-	for (const obj of objects) {
-
-		const route =
-			parseRouteObject(obj);
-
-		if (route) {
-			routes.push(route);
-		}
-	}
-
-	return routes;
+async function findRouteFiles(): Promise<vscode.Uri[]> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+        return [];
+    }
+    
+    const patterns = [
+        '**/app-routing.module.ts',      // Standard Angular routing module
+        '**/*-routing.module.ts',        // Feature routing modules
+        '**/app.routes.ts',              // Standalone Angular v14+ routes
+        '**/*.routes.ts',                // Routes files
+        '**/routes.ts'                   // Barrel routes
+    ];
+    
+    const allUris: vscode.Uri[] = [];
+    
+    for (const pattern of patterns) {
+        try {
+            const files = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 200);
+            if (files.length > 0) {
+                console.log(`   Pattern "${pattern}": ${files.length} file(s)`);
+                allUris.push(...files);
+            }
+        } catch (error) {
+            console.log(`   Error searching pattern "${pattern}":`, error);
+        }
+    }
+    
+    // Remove duplicates
+    const unique = new Map<string, vscode.Uri>();
+    for (const uri of allUris) {
+        unique.set(uri.fsPath, uri);
+    }
+    
+    return Array.from(unique.values());
 }
 
 /**
- * Parse single route object
+ * Analyze route file content
  */
-function parseRouteObject(
-	routeStr: string
-): AngularRoute | null {
-
-	try {
-
-		// path
-		const pathMatch =
-			routeStr.match(
-				/path\s*:\s*['"`](.*?)['"`]/
-			);
-
-		const path =
-			pathMatch ? pathMatch[1] : '';
-
-		// component
-		const componentMatch =
-			routeStr.match(
-				/component\s*:\s*(\w+)/
-			);
-
-		const component =
-			componentMatch ? componentMatch[1] : null;
-
-		// lazy load (optional)
-		let lazyComponent: string | null = null;
-
-		const lazyMatch =
-			routeStr.match(
-				/loadComponent\s*:\s*\(\)\s*=>.*?(\w+)/
-			);
-
-		if (lazyMatch) {
-			lazyComponent = lazyMatch[1];
-		}
-
-		// redirect
-		const redirectMatch =
-			routeStr.match(
-				/redirectTo\s*:\s*['"`](.*?)['"`]/
-			);
-
-		const redirectTo =
-			redirectMatch ? redirectMatch[1] : null;
-
-		// guards
-		const guardsMatch =
-			routeStr.match(
-				/canActivate\s*:\s*\[(.*?)\]/
-			);
-
-		const guards =
-			guardsMatch
-				? guardsMatch[1]
-					.split(',')
-					.map(g => g.trim())
-					.filter(Boolean)
-				: [];
-
-		// wildcard
-		const isWildcard =
-			path === '**';
-
-		return {
-			path,
-			component: component || lazyComponent,
-			children: [],
-			guards,
-			lazyModule: null,
-			lazyRoutes: [],
-			isWildcard,
-			redirectTo
-		};
-
-	} catch (err) {
-
-		console.error("Parse error:", routeStr);
-		return null;
-	}
+export async function analyzeRouteFileContent(content: string, filePath: string): Promise<AngularRoute[]> {
+    const routes: AngularRoute[] = [];
+    
+    // Try multiple extraction methods
+    const routeArrays = extractRouteArrays(content);
+    
+    if (routeArrays.length === 0) {
+        // Try inline RouterModule.forRoot
+        const inlineMatch = content.match(/RouterModule\.forRoot\(\s*\[([\s\S]*?)\]\)/);
+        if (inlineMatch && inlineMatch[1]) {
+            routeArrays.push(inlineMatch[1]);
+        }
+        
+        // Try provideRouter (standalone)
+        const provideRouterMatch = content.match(/provideRouter\(\s*\[([\s\S]*?)\]\)/);
+        if (provideRouterMatch && provideRouterMatch[1]) {
+            routeArrays.push(provideRouterMatch[1]);
+        }
+    }
+    
+    for (const routeArray of routeArrays) {
+        const parsedRoutes = parseRouteArray(routeArray);
+        routes.push(...parsedRoutes);
+    }
+    
+    // Build full paths for nested routes
+    buildFullPaths(routes);
+    
+    return routes;
 }
 
 /**
- * Analyze all route files
+ * Extract route arrays from file content
  */
-export async function analyzeAllRoutes():
-	Promise<AngularRoute[]> {
-
-	const routeFiles =
-		await fileUtils.findRouteFiles();
-
-	console.log("📁 Route files:", routeFiles.length);
-
-	const allRoutes: AngularRoute[] = [];
-
-	for (const file of routeFiles) {
-
-		try {
-
-			const content =
-				await fileUtils.readFileContent(file);
-
-			const routes =
-				await analyzeRouteFile(file, content);
-
-			allRoutes.push(...routes);
-
-		} catch (err) {
-
-			console.error("File error:", file.fsPath, err);
-		}
-	}
-
-	return allRoutes;
+function extractRouteArrays(content: string): string[] {
+    const arrays: string[] = [];
+    
+    // Pattern 1: const routes: Routes = [...]
+    const pattern1 = content.match(/(?:export\s+)?(?:const|let)\s+routes\s*:\s*Routes\s*=\s*(\[[\s\S]*?\];)/);
+    if (pattern1 && pattern1[1]) {
+        arrays.push(pattern1[1]);
+        console.log('   Extracted routes from "routes: Routes = [...]" pattern');
+    }
+    
+    // Pattern 2: Routes = [...]
+    const pattern2 = content.match(/Routes\s*=\s*(\[[\s\S]*?\];)/);
+    if (pattern2 && pattern2[1]) {
+        arrays.push(pattern2[1]);
+        console.log('   Extracted routes from "Routes = [...]" pattern');
+    }
+    
+    // Pattern 3: export const routes = [...] (no type annotation)
+    const pattern3 = content.match(/export\s+const\s+routes\s*=\s*(\[[\s\S]*?\];)/);
+    if (pattern3 && pattern3[1]) {
+        arrays.push(pattern3[1]);
+        console.log('   Extracted routes from "export const routes = [...]" pattern');
+    }
+    
+    // Pattern 4: Look for array with route-like objects (fallback)
+    if (arrays.length === 0) {
+        const arrayMatch = content.match(/\[\s*\{\s*path\s*:\s*['"`][^'"`]*['"`][\s\S]*?\}\s*\]/);
+        if (arrayMatch) {
+            arrays.push(arrayMatch[0]);
+            console.log('   Extracted routes using fallback pattern');
+        }
+    }
+    
+    return arrays;
 }
 
 /**
- * Flatten routes
+ * Parse route array string into route objects
  */
-export function flattenRoutes(
-	routes: AngularRoute[]
-): AngularRoute[] {
-
-	const result: AngularRoute[] = [];
-
-	for (const r of routes) {
-
-		result.push(r);
-
-		if (r.children?.length) {
-			result.push(...flattenRoutes(r.children));
-		}
-	}
-
-	return result;
+function parseRouteArray(routeArrayStr: string): AngularRoute[] {
+    const routes: AngularRoute[] = [];
+    
+    // Remove outer brackets
+    let content = routeArrayStr.trim();
+    if (content.startsWith('[') && content.endsWith(']')) {
+        content = content.slice(1, -1);
+    }
+    
+    // Parse each route object
+    const routeObjects = splitRouteObjects(content);
+    
+    for (const routeObj of routeObjects) {
+        const route = parseSingleRoute(routeObj);
+        if (route) {
+            routes.push(route);
+        }
+    }
+    
+    return routes;
 }
 
 /**
- * Filter helpers
+ * Split route array content into individual route objects
+ * Handles nested objects and children arrays
  */
-export function getRoutesForComponent(
-	routes: AngularRoute[],
-	componentName: string
-): AngularRoute[] {
-
-	return flattenRoutes(routes)
-		.filter(r => r.component === componentName);
-}
-
-export function getLazyLoadedRoutes(
-	routes: AngularRoute[]
-): AngularRoute[] {
-
-	return flattenRoutes(routes)
-		.filter(r => !!r.component);
-}
-
-export function getGuardedRoutes(
-	routes: AngularRoute[]
-): AngularRoute[] {
-
-	return flattenRoutes(routes)
-		.filter(r => r.guards.length > 0);
+function splitRouteObjects(content: string): string[] {
+    const objects: string[] = [];
+    let braceCount = 0;
+    let currentObject = '';
+    let inObject = false;
+    
+    for (let i = 0; i < content.length; i++) {
+        const char = content[i];
+        
+        if (char === '{') {
+            if (!inObject) {
+                inObject = true;
+                currentObject = '';
+                braceCount = 0;
+            }
+            braceCount++;
+            currentObject += char;
+        } else if (char === '}') {
+            braceCount--;
+            currentObject += char;
+            
+            if (braceCount === 0 && inObject) {
+                objects.push(currentObject);
+                inObject = false;
+                currentObject = '';
+            }
+        } else if (inObject) {
+            currentObject += char;
+        }
+    }
+    
+    return objects;
 }
 
 /**
- * Display helper
+ * Parse a single route object
  */
-export function getRouteDisplayPath(
-	route: AngularRoute
-): string {
+function parseSingleRoute(routeStr: string): AngularRoute | null {
+    try {
+        // Extract path
+        const pathMatch = routeStr.match(/path\s*:\s*['"`]([^'"`]*)['"`]/);
+        const path = pathMatch ? pathMatch[1] : '';
+        
+        // Extract component
+        const componentMatch = routeStr.match(/component\s*:\s*(\w+)/);
+        let component = componentMatch ? componentMatch[1] : null;
+        
+        // Extract loadComponent (lazy loading)
+        if (!component) {
+            const loadComponentMatch = routeStr.match(/loadComponent\s*:\s*\(\)\s*=>\s*(?:import\([^)]+\)\.then\(\(?m\)?\s*=>\s*m\.(\w+)\)|(\w+))/);
+            if (loadComponentMatch) {
+                component = loadComponentMatch[1] || loadComponentMatch[2] || null;
+            }
+        }
+        
+        // Extract redirectTo
+        const redirectMatch = routeStr.match(/redirectTo\s*:\s*['"`]([^'"`]*)['"`]/);
+        const redirectTo = redirectMatch ? redirectMatch[1] : null;
+        
+        // Extract guards
+        const guards: string[] = [];
+        const canActivateMatch = routeStr.match(/canActivate\s*:\s*\[([^\]]*)\]/);
+        if (canActivateMatch) {
+            const guardNames = canActivateMatch[1].split(',').map(g => g.trim());
+            guards.push(...guardNames);
+        }
+        
+        // Extract lazy module
+        const lazyModuleMatch = routeStr.match(/loadChildren\s*:\s*['"`]([^'"`]*)['"`]/);
+        const lazyModule = lazyModuleMatch ? lazyModuleMatch[1] : null;
+        
+        // Extract children routes
+        let children: AngularRoute[] = [];
+        const childrenMatch = routeStr.match(/children\s*:\s*\[([\s\S]*?)\](?=\s*[,}])/);
+        if (childrenMatch && childrenMatch[1]) {
+            children = parseRouteArray(`[${childrenMatch[1]}]`);
+        }
+        
+        const isWildcard = path === '**';
+        
+        return {
+            path: path || '',
+            component,
+            children,
+            guards,
+            lazyModule,
+            lazyRoutes: [],
+            isWildcard,
+            redirectTo
+        };
+        
+    } catch (error) {
+        console.error('Error parsing route object:', error);
+        return null;
+    }
+}
 
-	if (route.isWildcard) return '** (Wildcard)';
+/**
+ * Build full paths for nested routes
+ */
+function buildFullPaths(routes: AngularRoute[], parentPath: string = ''): void {
+    for (const route of routes) {
+        let fullPath = route.path;
+        
+        if (parentPath && route.path) {
+            fullPath = parentPath + (route.path.startsWith('/') ? route.path : `/${route.path}`);
+        } else if (parentPath) {
+            fullPath = parentPath;
+        }
+        
+        route.fullPath = fullPath?.replace(/\/\//g, '/') || '/';
+        
+        if (route.children && route.children.length > 0) {
+            buildFullPaths(route.children, route.fullPath);
+        }
+    }
+}
 
-	return route.path || '(root)';
+/**
+ * Flatten nested routes
+ */
+export function flattenRoutes(routes: AngularRoute[]): AngularRoute[] {
+    const result: AngularRoute[] = [];
+    
+    for (const route of routes) {
+        result.push(route);
+        if (route.children && route.children.length > 0) {
+            result.push(...flattenRoutes(route.children));
+        }
+    }
+    
+    return result;
+}
+
+/**
+ * Get routes for a specific component
+ */
+export function getRoutesForComponent(routes: AngularRoute[], componentName: string): AngularRoute[] {
+    return flattenRoutes(routes).filter(r => r.component === componentName);
+}
+
+/**
+ * Get lazy loaded routes
+ */
+export function getLazyLoadedRoutes(routes: AngularRoute[]): AngularRoute[] {
+    return flattenRoutes(routes).filter(r => !!r.lazyModule);
+}
+
+/**
+ * Get guarded routes
+ */
+export function getGuardedRoutes(routes: AngularRoute[]): AngularRoute[] {
+    return flattenRoutes(routes).filter(r => r.guards.length > 0);
+}
+
+/**
+ * Get route display path
+ */
+export function getRouteDisplayPath(route: AngularRoute): string {
+    if (route.isWildcard) return '** (Wildcard)';
+    if (route.path === '') return '(Empty/Default)';
+    if (route.redirectTo) return `${route.path} → redirect to ${route.redirectTo}`;
+    return route.fullPath || route.path || '(Root)';
+}
+
+/**
+ * Get route summary for display
+ */
+export function getRouteSummary(route: AngularRoute): string {
+    const parts: string[] = [];
+    
+    if (route.path) parts.push(`path: "${route.path}"`);
+    if (route.component) parts.push(`component: ${route.component}`);
+    if (route.redirectTo) parts.push(`redirect: ${route.redirectTo}`);
+    if (route.lazyModule) parts.push(`lazy: ${route.lazyModule}`);
+    if (route.guards.length > 0) parts.push(`guards: [${route.guards.join(', ')}]`);
+    
+    return parts.join(' | ');
 }
