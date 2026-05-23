@@ -3,17 +3,21 @@
   "displayName": "Angular Project Insight",
   "version": "1.0.0",
   "publisher": "AnkitaSharma2816",
-  "engines": { "vscode": "^1.85.0" },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
   "main": "./dist/extension.js",
   "contributes": {
-    "commands": [{
-      "command": "angular-project-insight.generateReport",
-      "title": "Generate Angular Insight Report"
-    },
-   {
+    "commands": [
+      {
+        "command": "angular-project-insight.generateReport",
+        "title": "Generate Angular Insight Report"
+      },
+      {
         "command": "angular-project-insight.testPdf",
         "title": "Test PDF Generation"
-    }]
+      }
+    ]
   },
   "scripts": {
     "compile": "tsc",
@@ -21,8 +25,12 @@
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
+    "@types/glob": "^8.1.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "glob": "^13.0.6"
   }
 }

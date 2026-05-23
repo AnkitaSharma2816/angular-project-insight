@@ -1,7 +1,10 @@
 /**
  * Core TypeScript interfaces and types for Angular Project Analysis
- * Supports Angular 15+ (both standalone and module-based applications)
+ * Supports Angular 7 through Angular 21
+ * Handles both module-based and standalone applications
  */
+
+import type { VersionFeatures } from '../utils/versionCompat';
 
 // ============================================================================
 // COMPONENT TYPES
@@ -17,7 +20,7 @@ export interface AngularComponent {
 	/** CSS selector (e.g., 'app-dashboard', 'app-card') */
 	selector: string;
 
-	/** List of services injected in constructor */
+	/** List of services injected in constructor or via inject() */
 	dependencies: string[];
 
 	/** Template file URL (if external) */
@@ -26,7 +29,7 @@ export interface AngularComponent {
 	/** Array of external stylesheet URLs */
 	styleUrls: string[];
 
-	/** Whether component uses standalone: true */
+	/** Whether component uses standalone: true (Angular 14+) */
 	isStandalone: boolean;
 
 	/** Module that declares this component (if not standalone) */
@@ -34,6 +37,15 @@ export interface AngularComponent {
 
 	/** Route path that uses this component (if applicable) */
 	route: string | null;
+
+	/** Uses signals (Angular 16+) */
+	usesSignals: boolean;
+
+	/** Uses new control flow like @if, @for (Angular 17+) */
+	usesNewControlFlow: boolean;
+
+	/** Angular version that introduced this component */
+	minAngularVersion: number;
 }
 
 // ============================================================================
@@ -50,7 +62,7 @@ export interface AngularService {
 	/** Service's providedIn scope (e.g., 'root', 'any', specific module) */
 	providedIn: string | null;
 
-	/** Services that this service depends on (injected in constructor) */
+	/** Services this service depends on */
 	dependencies: string[];
 
 	/** HTTP methods used (if applicable) */
@@ -58,6 +70,15 @@ export interface AngularService {
 
 	/** API endpoints called */
 	apiEndpoints: string[];
+
+	/** Uses inject() function instead of constructor (Angular 14+) */
+	usesInject: boolean;
+
+	/** Uses signals (Angular 16+) */
+	usesSignals: boolean;
+
+	/** Angular version that introduced this service */
+	minAngularVersion: number;
 }
 
 // ============================================================================
@@ -88,6 +109,12 @@ export interface AngularRoute {
 
 	/** Route redirect target (if applicable) */
 	redirectTo: string | null;
+
+	/** Uses modern routing (Angular 14+) */
+	isModernRouting?: boolean;
+
+	/** Full path for nested routes */
+	fullPath?: string;
 }
 
 // ============================================================================
@@ -106,6 +133,12 @@ export interface AngularGuard {
 
 	/** Services this guard depends on */
 	dependencies: string[];
+
+	/** Is functional guard (Angular 15+) */
+	isFunctional: boolean;
+
+	/** Angular version required */
+	minAngularVersion: number;
 }
 
 export interface AngularInterceptor {
@@ -117,6 +150,12 @@ export interface AngularInterceptor {
 
 	/** Services this interceptor depends on */
 	dependencies: string[];
+
+	/** Is functional interceptor (Angular 15+) */
+	isFunctional: boolean;
+
+	/** Angular version required */
+	minAngularVersion: number;
 }
 
 // ============================================================================
@@ -186,6 +225,9 @@ export interface AngularProject {
 	/** Detected Angular version (e.g., '17.0.0') */
 	version: string;
 
+	/** Angular version features (parsed from version string) */
+	versionFeatures: VersionFeatures | null;
+
 	/** Whether project uses standalone components (Angular 14+) */
 	isStandalone: boolean;
 
@@ -215,6 +257,17 @@ export interface AngularProject {
 
 	/** Any warnings or issues found during analysis */
 	warnings: string[];
+
+	/** Features detected in this project */
+	detectedFeatures: {
+		usesModernRouting: boolean;       // Angular 14+
+		usesSignals: boolean;             // Angular 16+
+		usesNewControlFlow: boolean;      // Angular 17+
+		usesFunctionalGuards: boolean;    // Angular 15+
+		usesFunctionalInterceptors: boolean; // Angular 15+
+		hasStandaloneComponents: boolean; // Angular 14+
+		hasModules: boolean;              // Angular 7+
+	};
 }
 
 // ============================================================================
