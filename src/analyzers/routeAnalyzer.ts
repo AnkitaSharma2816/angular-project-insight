@@ -26,10 +26,17 @@ export interface AngularRoute {
  */
 export async function analyzeAllRoutes(): Promise<AngularRoute[]> {
     const routeFiles = await findRouteFiles();
+    console.log(`\n🛣️  ROUTE ANALYSIS STARTING`);
     console.log(`📁 Route files found: ${routeFiles.length}`);
     
     if (routeFiles.length === 0) {
-        console.log('⚠️ No route files found. Check that your Angular project has routing configured.');
+        console.log('⚠️  No route files found. Patterns searched:');
+        console.log('   - **/app-routing.module.ts');
+        console.log('   - **/*-routing.module.ts');
+        console.log('   - **/app.routes.ts');
+        console.log('   - **/*.routes.ts');
+        console.log('   - **/routes.ts');
+        console.log('   Check that your Angular project has routing configured.');
         return [];
     }
     
@@ -44,18 +51,19 @@ export async function analyzeAllRoutes(): Promise<AngularRoute[]> {
             if (routes.length > 0) {
                 console.log(`   ✅ Found ${routes.length} route(s)`);
                 routes.forEach(r => {
-                    console.log(`      - ${r.path || '(root)'} → ${r.component || r.redirectTo || 'lazy'}`);
+                    console.log(`      - Path: "${r.path || '(root)'}" → Component: ${r.component || 'lazy'} | Redirect: ${r.redirectTo || 'none'}`);
                 });
                 allRoutes.push(...routes);
             } else {
-                console.log(`   ⚠️ No routes parsed from this file`);
+                console.log(`   ℹ️  No routes parsed from this file`);
             }
         } catch (error) {
-            console.error(`Error analyzing route file ${file.fsPath}:`, error);
+            console.error(`❌ Error analyzing route file ${file.fsPath}:`, error);
         }
     }
     
-    console.log(`\n✅ Total routes found: ${allRoutes.length}`);
+    console.log(`\n✅ ROUTE ANALYSIS COMPLETE`);
+    console.log(`📊 Total routes found: ${allRoutes.length}\n`);
     return allRoutes;
 }
 
@@ -65,8 +73,11 @@ export async function analyzeAllRoutes(): Promise<AngularRoute[]> {
 async function findRouteFiles(): Promise<vscode.Uri[]> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
+        console.warn('No workspace folders open');
         return [];
     }
+    
+    console.log(`\n🔍 SEARCHING FOR ROUTE FILES IN: ${workspaceFolders[0].uri.fsPath}`);
     
     const patterns = [
         '**/app-routing.module.ts',      // Standard Angular routing module
@@ -80,13 +91,17 @@ async function findRouteFiles(): Promise<vscode.Uri[]> {
     
     for (const pattern of patterns) {
         try {
+            console.log(`   Searching: "${pattern}"`);
             const files = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 200);
             if (files.length > 0) {
-                console.log(`   Pattern "${pattern}": ${files.length} file(s)`);
+                console.log(`      ✅ Found ${files.length} file(s)`);
+                files.forEach(f => console.log(`         - ${path.relative(workspaceFolders[0].uri.fsPath, f.fsPath)}`));
                 allUris.push(...files);
+            } else {
+                console.log(`      (none)`);
             }
         } catch (error) {
-            console.log(`   Error searching pattern "${pattern}":`, error);
+            console.warn(`   Error searching pattern "${pattern}":`, error);
         }
     }
     
@@ -96,7 +111,9 @@ async function findRouteFiles(): Promise<vscode.Uri[]> {
         unique.set(uri.fsPath, uri);
     }
     
-    return Array.from(unique.values());
+    const uniqueUris = Array.from(unique.values());
+    console.log(`\n📊 Total unique route files found: ${uniqueUris.length}`);
+    return uniqueUris;
 }
 
 /**

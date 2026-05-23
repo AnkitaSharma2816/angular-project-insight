@@ -14,7 +14,8 @@ import {
 import * as dependencyAnalyzer from '../analyzers/dependencyAnalyzer';
 
 /**
- * Generate complete markdown project overview
+ * Generate complete markdown project overview (SMART STRUCTURE)
+ * Organized for quick understanding of architecture
  * @param project AngularProject analysis result
  * @returns Formatted markdown string
  */
@@ -208,7 +209,25 @@ function generateRoutesSection(project: AngularProject): string {
 	if (project.routes.length === 0) {
 		return `## 🛣️ Routes
 
-No routes found in project.`;
+### ⚠️ No Routes Detected
+
+The analyzer searched for route files but found none. This could mean:
+
+1. **No routing configured** - Your Angular project might not have routing set up
+2. **Route file naming** - If you use custom route file names, they might not match the search patterns
+3. **Inline routing** - Routes defined inline in app.config.ts or similar files
+
+**Common route file names searched:**
+- \`app-routing.module.ts\`
+- \`*-routing.module.ts\`
+- \`app.routes.ts\`
+- \`*.routes.ts\`
+- \`routes.ts\`
+
+**Check your project:**
+- Look for files with "routes" in the name in your \`src/app/\` directory
+- If using standalone APIs (Angular 14+), look for \`provideRouter()\` calls
+- If using NgModule, look for \`RouterModule.forRoot()\` calls in your app module`;
 	}
 
 	let section = `## 🛣️ Routes (${project.routes.length})
