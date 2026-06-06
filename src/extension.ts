@@ -123,27 +123,42 @@ async function generateDetailedReportContent(projectPath: string): Promise<strin
     const styles = await findFiles(projectPath, /\.(css|scss|sass|less)$/i);
     const scripts = await findFiles(projectPath, /\.(js|ts)$/i);
     
-    // Scan translation files
-    const translationFiles = await findFiles(projectPath, /\.(json|xliff|xlf|po|mo)$/i);
+    // Scan translation files - filter out known config files
+    let allTranslationFiles = await findFiles(projectPath, /\.(json|xliff|xlf|po|mo)$/i);
+    const translationFiles = allTranslationFiles.filter(file => !isKnownConfigFile(file, projectPath));
     const i18nFolders = await findI18nFolders(projectPath);
     const translationKeys = await extractTranslationKeys(projectPath);
     
     // Scan configuration files
     const configFiles = await findConfigFiles(projectPath);
     
-    // Get Angular version
+    // Get Angular version - search in multiple locations
     let angularVersion = 'Not detected';
-    try {
-        const packageJsonPath = path.join(projectPath, 'package.json');
-        if (fs.existsSync(packageJsonPath)) {
-            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-            angularVersion = packageJson.dependencies?.['@angular/core'] || 
-                            packageJson.devDependencies?.['@angular/core'] || 
-                            'Not found';
-            angularVersion = angularVersion.replace(/[\^~]/g, '');
+    const possiblePackageJsonPaths = [
+        path.join(projectPath, 'package.json'),
+        path.join(projectPath, 'src', 'package.json')
+    ];
+    
+    for (const packageJsonPath of possiblePackageJsonPaths) {
+        try {
+            if (fs.existsSync(packageJsonPath)) {
+                const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+                const rawVersion = packageJson.dependencies?.['@angular/core'] || 
+                                packageJson.devDependencies?.['@angular/core'];
+                
+                if (rawVersion) {
+                    // Extract clean version number (e.g., "17.0.0" from "^17.0.0" or "~17.0.0" or "v17.0.0")
+                    angularVersion = String(rawVersion).replace(/[\^~v=<>]/g, '').trim();
+                    break; // Found version, exit loop
+                }
+            }
+        } catch (error) {
+            console.error(`Error reading ${packageJsonPath}:`, error);
         }
-    } catch (error) {
-        console.error('Error reading package.json:', error);
+    }
+    
+    if (angularVersion === 'Not detected') {
+        angularVersion = 'Not installed';
     }
     
     let content = `# 📊 Angular Project Insight Report\n\n`;
@@ -441,7 +456,9 @@ function detectLanguageFromPath(filePath: string): string {
             return name;
         }
     }
-    return 'Unknown';
+    // Return just the filename without extension if language not detected
+    const filename = path.basename(filePath);
+    return filename.replace(/\.[^.]+$/, '') || 'Translation File';
 }
 
 async function findConfigFiles(projectPath: string): Promise<Map<string, string>> {
@@ -450,6 +467,7 @@ async function findConfigFiles(projectPath: string): Promise<Map<string, string>
     const configPatterns: [string, string][] = [
         ['angular.json', 'Angular CLI Configuration'],
         ['package.json', 'NPM Dependencies & Scripts'],
+        ['package-lock.json', 'NPM Lock File'],
         ['tsconfig.json', 'TypeScript Configuration'],
         ['tsconfig.app.json', 'TypeScript App Configuration'],
         ['tsconfig.spec.json', 'TypeScript Test Configuration'],
@@ -472,6 +490,51 @@ async function findConfigFiles(projectPath: string): Promise<Map<string, string>
     }
     
     return configs;
+}
+
+/**
+ * Check if a file is a known configuration file that should not be classified as a translation file
+ * @param filePath Full path to the file
+ * @param projectPath Root path of the project
+ * @returns true if the file is a known config file
+ */
+function isKnownConfigFile(filePath: string, projectPath: string): boolean {
+    const filename = path.basename(filePath).toLowerCase();
+    
+    // Comprehensive list of known config file names (case-insensitive)
+    const knownConfigFiles = [
+        'angular.json',
+        'package.json',
+        'package-lock.json',
+        'tsconfig.json',
+        'tsconfig.app.json',
+        'tsconfig.spec.json',
+        '.eslintrc.json',
+        '.prettierrc',
+        'karma.conf.js',
+        'jest.config.js',
+        'cypress.config.ts',
+        'proxy.conf.json',
+        '.browserslistrc',
+        'tailwind.config.js',
+        'webpack.config.js'
+    ];
+    
+    // First: check if filename matches any known config file (works for any directory)
+    if (knownConfigFiles.some(cf => cf.toLowerCase() === filename)) {
+        return true;
+    }
+    
+    // Second: check additional patterns for config files
+    const configFilePatterns = [
+        /tsconfig\.[a-z]+\.json$/i,  // tsconfig.*.json files
+        /\.eslintrc\.(json|js|cjs|yaml|yml)$/i,
+        /jest\.config\.(js|ts|json|cjs)$/i,
+        /cypress\.config\.(js|ts)$/i,
+        /webpack\.config\.(js|ts)$/i
+    ];
+    
+    return configFilePatterns.some(pattern => pattern.test(filename));
 }
 
 async function generateProjectDescription(projectPath: string, components: string[], services: string[], routes: string[]): Promise<string> {
@@ -519,45 +582,80 @@ async function generateProjectDescription(projectPath: string, components: strin
 
 async function generateProjectSetupGuide(projectPath: string): Promise<string> {
     let setupGuide = `## 🚀 Project Setup Guide\n\n`;
-    
+
     let scripts: Record<string, string> = {};
     let dependencies: Record<string, string> = {};
+    let devDependencies: Record<string, string> = {};
+    let packageManager = 'npm';
+    let installCommand = 'npm install';
     let angularVersion = 'latest';
-    
+    let nodeRequirement = '18.x or higher';
+    let envFiles: string[] = [];
+
     try {
         const packageJsonPath = path.join(projectPath, 'package.json');
         if (fs.existsSync(packageJsonPath)) {
             const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
             scripts = packageJson.scripts || {};
             dependencies = packageJson.dependencies || {};
-            angularVersion = dependencies['@angular/core'] || 'latest';
-            angularVersion = angularVersion.replace(/[\^~]/g, '');
+            devDependencies = packageJson.devDependencies || {};
+
+            const rawAngularVersion = dependencies['@angular/core'] || devDependencies['@angular/core'] || 'latest';
+            angularVersion = String(rawAngularVersion).replace(/[\^~>=<]/g, '').trim() || 'latest';
+
+            if (packageJson.engines?.node) {
+                nodeRequirement = String(packageJson.engines.node).replace(/\|/g, ' or ').trim();
+            }
+
+            if (packageJson.packageManager) {
+                if (packageJson.packageManager.startsWith('pnpm')) {
+                    packageManager = 'pnpm';
+                    installCommand = 'pnpm install';
+                } else if (packageJson.packageManager.startsWith('yarn')) {
+                    packageManager = 'yarn';
+                    installCommand = 'yarn install';
+                }
+            }
         }
     } catch (error) {
         console.error('Error reading package.json:', error);
     }
     
     const hasYarnLock = fs.existsSync(path.join(projectPath, 'yarn.lock'));
-    const hasPnpmLock = fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'));
-    
-    let packageManager = 'npm';
-    let installCommand = 'npm install';
-    
-    if (hasYarnLock) {
-        packageManager = 'yarn';
-        installCommand = 'yarn install';
-    } else if (hasPnpmLock) {
+    const hasPnpmLock = fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml')) || fs.existsSync(path.join(projectPath, 'pnpm-lock.yml'));
+    const hasPackageLock = fs.existsSync(path.join(projectPath, 'package-lock.json'));
+    const hasDockerfile = fs.existsSync(path.join(projectPath, 'Dockerfile'));
+    const hasDockerCompose = fs.existsSync(path.join(projectPath, 'docker-compose.yml')) || fs.existsSync(path.join(projectPath, 'docker-compose.yaml'));
+
+    if (hasPnpmLock) {
         packageManager = 'pnpm';
         installCommand = 'pnpm install';
+    } else if (hasYarnLock) {
+        packageManager = 'yarn';
+        installCommand = 'yarn install';
+    } else if (hasPackageLock) {
+        packageManager = 'npm';
+        installCommand = 'npm ci';
     }
-    
+
+    const envPatterns = ['.env.example', '.env.local', '.env.development', '.env.production', '.env'];
+    for (const envFile of envPatterns) {
+        if (fs.existsSync(path.join(projectPath, envFile))) {
+            envFiles.push(envFile);
+        }
+    }
+
     setupGuide += `### 📋 Prerequisites\n\n`;
-    setupGuide += `| Requirement | Version | Check Command |\n`;
-    setupGuide += `|-------------|---------|---------------|\n`;
-    setupGuide += `| **Node.js** | 18.x or higher | \`node --version\` |\n`;
-    setupGuide += `| **npm** | 9.x or higher | \`npm --version\` |\n`;
+    setupGuide += `| Requirement | Recommendation | Check Command |\n`;
+    setupGuide += `|-------------|----------------|---------------|\n`;
+    setupGuide += `| **Node.js** | ${nodeRequirement} | \`node --version\` |\n`;
+    setupGuide += `| **${packageManager}** | Installed | \`${packageManager} --version\` |\n`;
     setupGuide += `| **Angular CLI** | ${angularVersion} | \`ng version\` |\n`;
-    setupGuide += `| **Package Manager** | ${packageManager} | \`${packageManager} --version\` |\n\n`;
+
+    if (hasDockerfile || hasDockerCompose) {
+        setupGuide += `| **Docker** | Required | \`docker --version\` |\n`;
+    }
+
     
     setupGuide += `### 📦 Installation\n\n`;
     setupGuide += `1. **Clone the repository** (if applicable):\n`;
@@ -565,8 +663,8 @@ async function generateProjectSetupGuide(projectPath: string): Promise<string> {
     setupGuide += `2. **Install dependencies**:\n`;
     setupGuide += `   \`\`\`bash\n   ${installCommand}\n   \`\`\`\n\n`;
     
-    const hasEnvExample = fs.existsSync(path.join(projectPath, '.env.example'));
-    if (hasEnvExample) {
+    // Environment file detection is handled by envFiles array.
+    if (envFiles.length > 0) {
         setupGuide += `### 🔧 Environment Configuration\n\n`;
         setupGuide += `1. Copy the example environment file:\n`;
         setupGuide += `   \`\`\`bash\n   cp .env.example .env\n   \`\`\`\n\n`;
