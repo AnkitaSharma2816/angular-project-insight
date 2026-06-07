@@ -89,6 +89,8 @@ export interface DetectedFeatures {
     usesFunctionalGuards: boolean;
     usesFunctionalInterceptors: boolean;
     hasModules: boolean;
+    cssFrameworks: string[];
+    cssPreprocessors: string[];
 }
 
 export interface AnalysisResult {
@@ -163,7 +165,7 @@ export async function analyzeAngularProject(): Promise<AnalysisResult> {
 
         // Step 7: Detect project features
         console.log(`\n🔎 Detecting project features...`);
-        const detectedFeatures = detectProjectFeatures(components, services, routes, guards, interceptors);
+        const detectedFeatures = await detectProjectFeatures(projectRoot, components, services, routes, guards, interceptors);
         console.log(`   ✅ Features detected:`);
         if (detectedFeatures.hasStandaloneComponents) console.log(`      • Standalone components (Angular 14+)`);
         if (detectedFeatures.usesModernRouting) console.log(`      • Modern routing (Angular 14+)`);
@@ -171,6 +173,8 @@ export async function analyzeAngularProject(): Promise<AnalysisResult> {
         if (detectedFeatures.usesNewControlFlow) console.log(`      • New control flow (Angular 17+)`);
         if (detectedFeatures.usesFunctionalGuards) console.log(`      • Functional guards (Angular 15+)`);
         if (detectedFeatures.usesFunctionalInterceptors) console.log(`      • Functional interceptors (Angular 15+)`);
+        if (detectedFeatures.cssFrameworks.length > 0) console.log(`      • CSS Frameworks: ${detectedFeatures.cssFrameworks.join(', ')}`);
+        if (detectedFeatures.cssPreprocessors.length > 0) console.log(`      • CSS Preprocessors: ${detectedFeatures.cssPreprocessors.join(', ')}`);
         if (detectedFeatures.hasModules) console.log(`      • NgModules (Angular 7+)`);
 
         const project: AngularProject = {
@@ -215,13 +219,42 @@ export async function analyzeAngularProject(): Promise<AnalysisResult> {
 /**
  * Detect project features to determine minimum Angular version needed
  */
-function detectProjectFeatures(
+async function detectProjectFeatures(
+    projectRoot: string,
     components: AngularComponent[],
     services: AngularService[],
     routes: AngularRoute[],
     guards: AngularGuard[],
     interceptors: AngularInterceptor[]
-): DetectedFeatures {
+): Promise<DetectedFeatures> {
+    // Check package.json for CSS frameworks
+    const cssFrameworks: string[] = [];
+    try {
+        const packageJsonUri = vscode.Uri.joinPath(vscode.Uri.file(projectRoot), 'package.json');
+        const content = await vscode.workspace.fs.readFile(packageJsonUri);
+        const packageJson = JSON.parse(Buffer.from(content).toString('utf8'));
+        const deps = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
+        
+        if (deps['tailwindcss']) cssFrameworks.push('Tailwind CSS');
+        if (deps['bootstrap']) cssFrameworks.push('Bootstrap');
+        if (deps['@angular/material']) cssFrameworks.push('Angular Material');
+        if (deps['bulma']) cssFrameworks.push('Bulma');
+        if (deps['foundation-sites']) cssFrameworks.push('Foundation');
+        if (deps['primeflex']) cssFrameworks.push('PrimeFlex');
+    } catch (e) {
+        // Ignore if package.json cannot be read
+    }
+
+    // Extract preprocessors from components
+    const preprocessors = new Set<string>();
+    components.forEach(c => {
+        c.styleUrls.forEach(url => {
+            if (url.endsWith('.scss') || url.endsWith('.sass')) preprocessors.add('SCSS/SASS');
+            else if (url.endsWith('.less')) preprocessors.add('LESS');
+            else if (url.endsWith('.css')) preprocessors.add('Vanilla CSS');
+        });
+    });
+
     return {
         hasStandaloneComponents: components.some(c => c.isStandalone),
         usesModernRouting: routes.length > 0,
@@ -230,6 +263,8 @@ function detectProjectFeatures(
         usesFunctionalGuards: guards.some(g => g.isFunctional),
         usesFunctionalInterceptors: interceptors.some(i => i.isFunctional),
         hasModules: true, // Modules are always present in Angular 7+
+        cssFrameworks,
+        cssPreprocessors: Array.from(preprocessors)
     };
 }
 

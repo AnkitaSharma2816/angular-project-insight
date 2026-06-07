@@ -22,9 +22,9 @@ export async function generatePdf(markdownContent: string, outputPath: string): 
         vscode.window.showInformationMessage(
             `HTML report opened in browser. Press Ctrl+P → "Save as PDF" to save as PDF.`,
             'Open Folder'
-        ).then(selection => {
+        ).then(async (selection) => {
             if (selection === 'Open Folder') {
-                vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(path.dirname(htmlPath)));
+                await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(path.dirname(htmlPath)));
             }
         });
         

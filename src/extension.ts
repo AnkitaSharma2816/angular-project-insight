@@ -32,17 +32,18 @@ async function generateFullReport() {
         title: 'Generating Angular Project Report...',
         cancellable: false
     }, async (progress) => {
-        progress.report({ increment: 0, message: 'Scanning project files...' });
-        
-        const reportContent = await generateDetailedReportContent(workspaceFolder.uri.fsPath);
-        
-        progress.report({ increment: 50, message: 'Creating report files...' });
-        
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const baseFileName = `angular-insight-${timestamp}`;
-        const workspacePath = workspaceFolder.uri.fsPath;
-
         try {
+            progress.report({ increment: 0, message: 'Scanning project files...' });
+            console.log('Starting report generation for:', workspaceFolder.uri.fsPath);
+            
+            const reportContent = await generateDetailedReportContent(workspaceFolder.uri.fsPath);
+            
+            progress.report({ increment: 50, message: 'Creating report files...' });
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const baseFileName = `angular-insight-${timestamp}`;
+            const workspacePath = workspaceFolder.uri.fsPath;
+
             if (format === 'Markdown') {
                 const outputPath = path.join(workspacePath, `${baseFileName}.md`);
                 fs.writeFileSync(outputPath, reportContent);
@@ -62,6 +63,7 @@ async function generateFullReport() {
                 const outputPath = path.join(workspacePath, `${baseFileName}.pdf`);
                 await generatePdf(reportContent, outputPath);
                 progress.report({ increment: 100, message: 'Complete!' });
+                vscode.window.showInformationMessage(`✅ PDF Report saved: ${baseFileName}.pdf`);
             }
             else if (format === 'Both (Markdown + PDF)') {
                 const mdPath = path.join(workspacePath, `${baseFileName}.md`);
@@ -72,11 +74,13 @@ async function generateFullReport() {
                 
                 progress.report({ increment: 100, message: 'Complete!' });
                 
-                vscode.window.showInformationMessage(`✅ Reports saved to: ${workspacePath}`);
+                vscode.window.showInformationMessage(`✅ Reports saved!\n📄 Markdown: ${baseFileName}.md\n📕 PDF: ${baseFileName}.pdf`);
             }
         } catch (error) {
-            vscode.window.showErrorMessage(`Failed to generate report: ${error}`);
+            const errorMsg = error instanceof Error ? error.message : String(error);
             console.error('Report generation error:', error);
+            console.error('Stack:', error instanceof Error ? error.stack : 'N/A');
+            vscode.window.showErrorMessage(`❌ Failed to generate report: ${errorMsg}`);
         }
     });
 }
@@ -91,20 +95,40 @@ async function generateDetailedReportContent(projectPath: string): Promise<strin
     let projectAuthor = 'Unknown';
     let projectLicense = 'Unknown';
     let projectKeywords: string[] = [];
+    let packageJsonData: any = {};
+    let foundPackageJson = false;
     
-    try {
-        const packageJsonPath = path.join(projectPath, 'package.json');
+    // Search for package.json in multiple locations
+    const possiblePaths = [
+        path.join(projectPath, 'package.json'),
+        path.join(projectPath, 'src', 'package.json'),
+        path.join(projectPath, 'frontend', 'package.json'),
+        path.join(projectPath, 'client', 'package.json'),
+        path.join(projectPath, 'apps', 'main', 'package.json'),
+        path.join(projectPath, 'packages', 'app', 'package.json')
+    ];
+    
+    for (const packageJsonPath of possiblePaths) {
         if (fs.existsSync(packageJsonPath)) {
-            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-            projectName = packageJson.name || projectName;
-            projectDescription = packageJson.description || 'No description provided';
-            projectVersion = packageJson.version || '1.0.0';
-            projectAuthor = packageJson.author || 'Unknown';
-            projectLicense = packageJson.license || 'Unknown';
-            projectKeywords = packageJson.keywords || [];
+            console.log(`✅ Found package.json at: ${packageJsonPath}`);
+            try {
+                packageJsonData = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+                projectName = packageJsonData.name || projectName;
+                projectDescription = packageJsonData.description || 'No description provided';
+                projectVersion = packageJsonData.version || '1.0.0';
+                projectAuthor = packageJsonData.author || 'Unknown';
+                projectLicense = packageJsonData.license || 'Unknown';
+                projectKeywords = packageJsonData.keywords || [];
+                foundPackageJson = true;
+                break;
+            } catch (error) {
+                console.error(`Error parsing ${packageJsonPath}:`, error);
+            }
         }
-    } catch (error) {
-        console.error('Error reading package.json:', error);
+    }
+    
+    if (!foundPackageJson) {
+        console.warn('⚠️ No package.json found in any expected location');
     }
     
     // Scan all file types
@@ -123,10 +147,16 @@ async function generateDetailedReportContent(projectPath: string): Promise<strin
     const styles = await findFiles(projectPath, /\.(css|scss|sass|less)$/i);
     const scripts = await findFiles(projectPath, /\.(js|ts)$/i);
     
-    // Scan translation files - filter out known config files
-    let allTranslationFiles = await findFiles(projectPath, /\.(json|xliff|xlf|po|mo)$/i);
-    const translationFiles = allTranslationFiles.filter(file => !isKnownConfigFile(file, projectPath));
+    // Find i18n folders first
     const i18nFolders = await findI18nFolders(projectPath);
+    
+    // Scan translation files - only from i18n/locale/translations folders
+    const translationFiles: string[] = [];
+    for (const i18nFolder of i18nFolders) {
+        const filesInI18n = await findFiles(i18nFolder, /\.(json|xliff|xlf|po|mo)$/i);
+        translationFiles.push(...filesInI18n);
+    }
+    
     const translationKeys = await extractTranslationKeys(projectPath);
     
     // Scan configuration files
@@ -134,33 +164,43 @@ async function generateDetailedReportContent(projectPath: string): Promise<strin
     
     // Get Angular version - search in multiple locations
     let angularVersion = 'Not detected';
-    const possiblePackageJsonPaths = [
+    const possibleVersionPaths = [
         path.join(projectPath, 'package.json'),
-        path.join(projectPath, 'src', 'package.json')
+        path.join(projectPath, 'src', 'package.json'),
+        path.join(projectPath, 'frontend', 'package.json'),
+        path.join(projectPath, 'client', 'package.json'),
+        path.join(projectPath, 'apps', 'main', 'package.json'),
+        path.join(projectPath, 'packages', 'app', 'package.json')
     ];
     
-    for (const packageJsonPath of possiblePackageJsonPaths) {
+    for (const versionPath of possibleVersionPaths) {
         try {
-            if (fs.existsSync(packageJsonPath)) {
-                const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+            if (fs.existsSync(versionPath)) {
+                const packageJson = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
                 const rawVersion = packageJson.dependencies?.['@angular/core'] || 
                                 packageJson.devDependencies?.['@angular/core'];
                 
                 if (rawVersion) {
                     // Extract clean version number (e.g., "17.0.0" from "^17.0.0" or "~17.0.0" or "v17.0.0")
                     angularVersion = String(rawVersion).replace(/[\^~v=<>]/g, '').trim();
+                    console.log(`✅ Angular version detected: ${angularVersion}`);
                     break; // Found version, exit loop
                 }
             }
         } catch (error) {
-            console.error(`Error reading ${packageJsonPath}:`, error);
+            console.error(`Error reading ${versionPath}:`, error);
         }
     }
     
     if (angularVersion === 'Not detected') {
         angularVersion = 'Not installed';
+        console.warn('⚠️ Angular/core not found in dependencies');
     }
     
+    // Detect CSS Frameworks and Preprocessors
+    const cssFrameworks = detectCssFrameworks(projectPath, packageJsonData);
+    const cssPreprocessors = detectCssPreprocessors(styles);
+
     let content = `# 📊 Angular Project Insight Report\n\n`;
     content += `## 📋 Project Information\n\n`;
     content += `| Property | Value |\n`;
@@ -171,6 +211,8 @@ async function generateDetailedReportContent(projectPath: string): Promise<strin
     content += `| **Author** | ${projectAuthor} |\n`;
     content += `| **License** | ${projectLicense} |\n`;
     content += `| **Angular Version** | ${angularVersion} |\n`;
+    content += `| **CSS Framework(s)** | ${cssFrameworks.join(', ')} |\n`;
+    content += `| **CSS Preprocessor(s)** | ${cssPreprocessors.join(', ')} |\n`;
     if (projectKeywords.length > 0) {
         content += `| **Keywords** | ${projectKeywords.join(', ')} |\n`;
     }
@@ -794,6 +836,38 @@ function getFileTree(dirPath: string, prefix: string = '', isLast: boolean = tru
     }
     
     return tree;
+}
+
+function detectCssFrameworks(projectPath: string, packageJson: any): string[] {
+    const frameworks: string[] = [];
+    const deps = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
+
+    if (deps['tailwindcss'] || fs.existsSync(path.join(projectPath, 'tailwind.config.js'))) {
+        frameworks.push('Tailwind CSS');
+    }
+    if (deps['bootstrap']) frameworks.push('Bootstrap');
+    if (deps['@angular/material']) frameworks.push('Angular Material');
+    if (deps['bulma']) frameworks.push('Bulma');
+    if (deps['foundation-sites']) frameworks.push('Foundation');
+    if (deps['primeflex']) frameworks.push('PrimeFlex');
+
+    return frameworks.length > 0 ? frameworks : ['None Detected'];
+}
+
+function detectCssPreprocessors(styles: string[]): string[] {
+    const preprocessors = new Set<string>();
+    let hasVanillaCss = false;
+
+    for (const style of styles) {
+        if (style.endsWith('.scss') || style.endsWith('.sass')) preprocessors.add('SCSS/SASS');
+        else if (style.endsWith('.less')) preprocessors.add('LESS');
+        else if (style.endsWith('.css')) hasVanillaCss = true;
+    }
+
+    if (preprocessors.size === 0 && hasVanillaCss) preprocessors.add('Vanilla CSS');
+    else if (preprocessors.size === 0) preprocessors.add('None Detected');
+
+    return Array.from(preprocessors);
 }
 
 export function deactivate() {}
